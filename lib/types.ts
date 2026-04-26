@@ -27,6 +27,10 @@ export interface Volunteer {
   lng: number;
   available: boolean;
   registered_at: number;
+  bio?: string;
+  assignmentCount?: number;
+  rating?: number;
+  languages?: string[];
 }
 
 export interface NeedExtraction {
