@@ -21,11 +21,21 @@ function mockExtract(message: string): NeedExtraction {
   const countMatch = msg.match(/(\d+)\s*(log|logo|people|persons|families|family|ghar)/);
   const affected_count = countMatch ? parseInt(countMatch[1]) : 10;
 
-  // extract ward name — look for known wards in message
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { WARD_NAMES } = require('./wards');
   const location = WARD_NAMES.find((w: string) => msg.includes(w)) ?? 'dharavi';
 
   return { location, need_type, severity, affected_count };
+}
+
+// Strip markdown fences Gemini occasionally wraps JSON in
+function parseGeminiJson(raw: string): NeedExtraction {
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+  return JSON.parse(cleaned) as NeedExtraction;
 }
 
 export async function extractNeed(rawMessage: string): Promise<NeedExtraction> {
@@ -46,15 +56,15 @@ Rules:
 - location must be a Mumbai ward name in English (e.g. "dharavi", "andheri", "bandra")
 - If location is unclear, default to "dharavi"
 - If affected_count is unclear, default to 10
-- Handle Hindi, Hinglish, and informal text without punctuation
+- Handle Hindi, Hinglish, abbreviations, and informal text without punctuation
+- Infer severity from urgency words even if not explicit
 Message: "${rawMessage}"`;
 
   try {
     const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    return JSON.parse(text) as NeedExtraction;
-  } catch {
-    // fallback to mock if API fails
+    return parseGeminiJson(result.response.text());
+  } catch (err) {
+    console.error('Gemini extraction failed, falling back to mock:', err);
     return mockExtract(rawMessage);
   }
 }

@@ -15,6 +15,12 @@ export interface CommunityNeed {
   assigned_volunteer_id?: string;
   created_at: number;
   source_phone: string;
+  // Escalation
+  escalated?: boolean;
+  escalated_at?: number;
+  // Volunteer status updates via WhatsApp reply
+  volunteer_eta?: string;
+  volunteer_reply?: string;
 }
 
 export interface Volunteer {

@@ -65,6 +65,11 @@ export default function NeedDetailPanel({ need, volunteers, onBack, onInitiateAs
         </button>
         <div className="h-4 w-px bg-slate-200" />
         <span className="text-sm font-medium text-slate-600 capitalize">{need.need_type} Need</span>
+        {need.escalated && (
+          <span className="ml-auto flex items-center gap-1 text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-semibold animate-pulse">
+            🚨 Escalated
+          </span>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
@@ -89,8 +94,10 @@ export default function NeedDetailPanel({ need, volunteers, onBack, onInitiateAs
         <div>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Field Report</p>
           <div className="bg-slate-50 rounded-xl p-3.5 border-l-4 border-slate-300">
-            <p className="text-sm text-slate-700 italic leading-relaxed">"{need.raw_message}"</p>
-            <p className="text-xs text-slate-400 mt-2">{need.source_phone}</p>
+            <p className="text-sm text-slate-700 italic leading-relaxed">&ldquo;{need.raw_message}&rdquo;</p>
+            <p className="text-xs text-slate-400 mt-2">
+              Reported by <span className="font-mono">{need.source_phone}</span>
+            </p>
           </div>
         </div>
 
@@ -112,12 +119,26 @@ export default function NeedDetailPanel({ need, volunteers, onBack, onInitiateAs
           </div>
         </div>
 
-        {/* Status */}
+        {/* Status sections */}
         {need.status === 'assigned' && (
           <div className="space-y-2">
             <div className="text-sm font-semibold px-3 py-2 rounded-lg text-center bg-blue-50 text-blue-700">
               ✓ Assigned — volunteer en route
             </div>
+            {(need.volunteer_eta || need.volunteer_reply) && (
+              <div className="px-3 py-2.5 bg-slate-50 rounded-lg border border-slate-100 space-y-1">
+                {need.volunteer_eta && (
+                  <p className="text-xs text-slate-700">
+                    <span className="font-semibold">Status:</span> {need.volunteer_eta}
+                  </p>
+                )}
+                {need.volunteer_reply && (
+                  <p className="text-xs text-slate-500 italic">
+                    &ldquo;{need.volunteer_reply.slice(0, 80)}{need.volunteer_reply.length > 80 ? '…' : ''}&rdquo;
+                  </p>
+                )}
+              </div>
+            )}
             {onResolve && (
               <button
                 onClick={() => onResolve(need.id)}
@@ -128,6 +149,7 @@ export default function NeedDetailPanel({ need, volunteers, onBack, onInitiateAs
             )}
           </div>
         )}
+
         {need.status === 'resolved' && (
           <div className="text-sm font-semibold px-3 py-2 rounded-lg text-center bg-green-50 text-green-700">
             ✓ Resolved

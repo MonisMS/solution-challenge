@@ -53,8 +53,6 @@ function MapController({ selectedNeed }: { selectedNeed: CommunityNeed | null })
   return null;
 }
 
-const AVATAR_COLORS = ['bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-rose-500', 'bg-amber-500'];
-function avatarBg(name: string) { return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length]; }
 function initials(name: string) { return name.split(' ').map(n => n[0]).join('').slice(0, 2); }
 
 interface Props {
@@ -98,7 +96,7 @@ export default function NeedMap({ needs, volunteers, selectedNeed, onSelectNeed,
                   </div>
                 </div>
                 <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic', marginBottom: 8, lineHeight: 1.4 }}>
-                  "{need.raw_message.slice(0, 70)}{need.raw_message.length > 70 ? '…' : ''}"
+                  &ldquo;{need.raw_message.slice(0, 70)}{need.raw_message.length > 70 ? '…' : ''}&rdquo;
                 </div>
                 {need.status === 'open' && matches.length > 0 && (
                   <>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { CommunityNeed, Volunteer } from '@/lib/types';
 
@@ -12,8 +12,12 @@ import VolunteerPanel from './VolunteerPanel';
 import VolunteerDrawer from './VolunteerDrawer';
 import VolunteerProfileModal from './VolunteerProfileModal';
 import AssignConfirmDialog from './AssignConfirmDialog';
+import SituationBriefModal from './SituationBriefModal';
+import Toast from './Toast';
 
 const NeedMap = dynamic(() => import('./NeedMap'), { ssr: false });
+
+const ESCALATION_POLL_MS = process.env.NEXT_PUBLIC_TEST_MODE === 'true' ? 30_000 : 60_000;
 
 export default function Dashboard() {
   const [needs, setNeeds] = useState<CommunityNeed[]>([]);
@@ -22,6 +26,16 @@ export default function Dashboard() {
   const [assignTarget, setAssignTarget] = useState<{ need: CommunityNeed; volunteer: Volunteer } | null>(null);
   const [showVolunteerDrawer, setShowVolunteerDrawer] = useState(false);
   const [profileVolunteer, setProfileVolunteer] = useState<Volunteer | null>(null);
+
+  // Toast
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const dismissToast = useCallback(() => setToast(null), []);
+
+  // Situation brief
+  const [showBrief, setShowBrief] = useState(false);
+  const [briefText, setBriefText] = useState<string | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefGeneratedAt, setBriefGeneratedAt] = useState<number | null>(null);
 
   // Real-time Firestore listeners
   useEffect(() => {
@@ -39,6 +53,13 @@ export default function Dashboard() {
     fetch('/api/seed', { method: 'POST' }).catch(() => {});
   }, []);
 
+  // Escalation polling
+  useEffect(() => {
+    const poll = () => fetch('/api/needs/escalate', { method: 'POST' }).catch(() => {});
+    const timer = setInterval(poll, ESCALATION_POLL_MS);
+    return () => clearInterval(timer);
+  }, []);
+
   const handleSelectNeed = useCallback((need: CommunityNeed) => {
     setSelectedNeed(prev => prev?.id === need.id ? null : need);
   }, []);
@@ -51,20 +72,38 @@ export default function Dashboard() {
     if (!assignTarget) return;
     const { need, volunteer } = assignTarget;
 
-    await fetch('/api/needs', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: need.id, status: 'assigned', assigned_volunteer_id: volunteer.id }),
-    });
+    try {
+      const [patchRes, notifyRes] = await Promise.all([
+        fetch('/api/needs', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: need.id, status: 'assigned', assigned_volunteer_id: volunteer.id }),
+        }),
+        fetch('/api/whatsapp/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: volunteer.phone, message }),
+        }),
+      ]);
 
-    await fetch('/api/whatsapp/notify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: volunteer.phone, message }),
-    });
+      if (!patchRes.ok) throw new Error('Failed to update need');
 
-    // Mark volunteer unavailable so they can't be double-assigned
-    await updateDoc(doc(db, 'volunteers', volunteer.id), { available: false });
+      await updateDoc(doc(db, 'volunteers', volunteer.id), {
+        available: false,
+        assignmentCount: increment(1),
+      });
+
+      const notifyOk = notifyRes.ok;
+      setToast({
+        message: notifyOk
+          ? `Assigned to ${volunteer.name} — WhatsApp sent ✓`
+          : `Assigned to ${volunteer.name} (WhatsApp delivery failed)`,
+        type: notifyOk ? 'success' : 'error',
+      });
+    } catch (err) {
+      console.error('Assignment error:', err);
+      setToast({ message: 'Assignment failed. Please try again.', type: 'error' });
+    }
 
     setAssignTarget(null);
     setSelectedNeed(null);
@@ -76,19 +115,42 @@ export default function Dashboard() {
 
   const handleResolve = useCallback(async (needId: string) => {
     const need = needs.find(n => n.id === needId);
-    await fetch('/api/needs', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: needId, status: 'resolved' }),
-    });
-    // Free the volunteer back to available
-    if (need?.assigned_volunteer_id) {
-      await updateDoc(doc(db, 'volunteers', need.assigned_volunteer_id), { available: true });
+    try {
+      await fetch('/api/needs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: needId, status: 'resolved' }),
+      });
+      if (need?.assigned_volunteer_id) {
+        await updateDoc(doc(db, 'volunteers', need.assigned_volunteer_id), { available: true });
+      }
+      setToast({ message: 'Need marked as resolved ✓', type: 'success' });
+    } catch (err) {
+      console.error('Resolve error:', err);
+      setToast({ message: 'Failed to resolve need.', type: 'error' });
     }
     setSelectedNeed(null);
   }, [needs]);
 
+  const handleFetchBrief = useCallback(async () => {
+    setShowBrief(true);
+    setBriefLoading(true);
+    setBriefText(null);
+    try {
+      const res = await fetch('/api/needs/brief');
+      if (!res.ok) throw new Error('Brief fetch failed');
+      const data = await res.json();
+      setBriefText(data.brief ?? null);
+      setBriefGeneratedAt(Date.now());
+    } catch {
+      setBriefText(null);
+    } finally {
+      setBriefLoading(false);
+    }
+  }, []);
+
   const openCount = needs.filter(n => n.status === 'open').length;
+  const criticalCount = needs.filter(n => n.status === 'open' && n.severity === 'critical').length;
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
@@ -109,6 +171,13 @@ export default function Dashboard() {
 
         {/* Stats */}
         <div className="hidden sm:flex items-center gap-4 text-sm">
+          {criticalCount > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-red-600 font-semibold">{criticalCount}</span>
+              <span className="text-slate-400">critical</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-red-500" />
             <span className="text-slate-600 font-medium">{openCount}</span>
@@ -119,6 +188,15 @@ export default function Dashboard() {
             <span className="text-slate-500 text-xs">Live</span>
           </div>
         </div>
+
+        {/* Situation Brief */}
+        <button
+          onClick={handleFetchBrief}
+          className="hidden sm:flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors border border-slate-200"
+        >
+          <span>📋</span>
+          <span>Situation Brief</span>
+        </button>
 
         {/* Add volunteer */}
         <button
@@ -167,7 +245,6 @@ export default function Dashboard() {
         <div className="w-72 shrink-0 bg-white border-l border-slate-200 flex flex-col overflow-hidden">
           <VolunteerPanel
             volunteers={volunteers}
-            onToggleAvailability={handleToggleAvailability}
             onViewProfile={setProfileVolunteer}
             onAddVolunteer={() => setShowVolunteerDrawer(true)}
           />
@@ -194,6 +271,20 @@ export default function Dashboard() {
           onCancel={() => setAssignTarget(null)}
           onConfirm={handleConfirmAssign}
         />
+      )}
+
+      {showBrief && (
+        <SituationBriefModal
+          brief={briefText}
+          loading={briefLoading}
+          generatedAt={briefGeneratedAt}
+          onClose={() => setShowBrief(false)}
+          onRefresh={handleFetchBrief}
+        />
+      )}
+
+      {toast && (
+        <Toast message={toast.message} type={toast.type} onDismiss={dismissToast} />
       )}
     </div>
   );

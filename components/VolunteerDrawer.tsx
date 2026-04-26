@@ -19,6 +19,7 @@ export default function VolunteerDrawer({ onClose }: Props) {
   const [bio, setBio] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState('');
 
   function toggle<T>(arr: T[], val: T): T[] {
     return arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val];
@@ -27,13 +28,21 @@ export default function VolunteerDrawer({ onClose }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setError('');
     try {
-      await fetch('/api/volunteers', {
+      const res = await fetch('/api/volunteers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, phone, ward, skills, languages, bio }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError((data as { error?: string }).error || 'Registration failed. Please try again.');
+        return;
+      }
       setDone(true);
+    } catch {
+      setError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -163,6 +172,10 @@ export default function VolunteerDrawer({ onClose }: Props) {
                   placeholder="Brief description of your experience and background…"
                 />
               </label>
+
+              {error && (
+                <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+              )}
             </div>
 
             <div className="px-6 py-4 border-t border-slate-100">

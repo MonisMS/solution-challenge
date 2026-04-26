@@ -26,12 +26,11 @@ function initials(name: string) {
 
 interface Props {
   volunteers: Volunteer[];
-  onToggleAvailability: (id: string, available: boolean) => void;
   onViewProfile: (v: Volunteer) => void;
   onAddVolunteer: () => void;
 }
 
-export default function VolunteerPanel({ volunteers, onToggleAvailability, onViewProfile, onAddVolunteer }: Props) {
+export default function VolunteerPanel({ volunteers, onViewProfile, onAddVolunteer }: Props) {
   const [search, setSearch] = useState('');
   const [filterAvailable, setFilterAvailable] = useState(false);
 

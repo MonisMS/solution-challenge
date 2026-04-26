@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 
 export async function POST(request: NextRequest) {
+  const secret = request.headers.get('x-admin-secret');
+  if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { phone } = await request.json();
   if (!phone) return NextResponse.json({ error: 'phone required' }, { status: 400 });
 

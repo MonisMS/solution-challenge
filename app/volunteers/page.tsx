@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { WARD_NAMES } from '@/lib/wards';
 
 const SKILL_OPTIONS = ['food', 'medical', 'shelter', 'water', 'other'] as const;
@@ -39,7 +40,7 @@ export default function VolunteerRegistration() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="bg-white rounded-2xl shadow-md p-8 max-w-md w-full text-center">
           <div className="text-5xl mb-4">✅</div>
-          <h2 className="text-xl font-bold mb-2">You're registered!</h2>
+          <h2 className="text-xl font-bold mb-2">You&apos;re registered!</h2>
           <p className="text-gray-600 text-sm mb-4">
             To receive WhatsApp alerts, text{' '}
             <span className="font-mono font-semibold bg-gray-100 px-1 rounded">
@@ -48,9 +49,9 @@ export default function VolunteerRegistration() {
             to{' '}
             <span className="font-mono font-semibold">+1 415 523 8886</span>
           </p>
-          <a href="/" className="text-blue-600 text-sm hover:underline">
+          <Link href="/" className="text-blue-600 text-sm hover:underline">
             ← Back to dashboard
-          </a>
+          </Link>
         </div>
       </div>
     );
@@ -60,7 +61,7 @@ export default function VolunteerRegistration() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
       <div className="bg-white rounded-2xl shadow-md p-8 max-w-md w-full">
         <h1 className="text-2xl font-bold mb-1">Volunteer Registration</h1>
-        <p className="text-gray-500 text-sm mb-6">Join Mumbai's emergency response network</p>
+        <p className="text-gray-500 text-sm mb-6">Join Mumbai&apos;s emergency response network</p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <label className="flex flex-col gap-1.5">

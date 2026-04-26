@@ -112,9 +112,14 @@ export default function PriorityQueue({ needs, selectedNeedId, onSelectNeed }: P
                     <span className="text-base shrink-0">{NEED_ICON[need.need_type]}</span>
                     <span className="font-semibold text-slate-900 text-sm capitalize truncate">{need.need_type}</span>
                   </div>
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold capitalize shrink-0 ${SEV_BADGE[need.severity]}`}>
-                    {need.severity}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {need.escalated && (
+                      <span className="text-xs animate-pulse" title="Escalated">🚨</span>
+                    )}
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold capitalize ${SEV_BADGE[need.severity]}`}>
+                      {need.severity}
+                    </span>
+                  </div>
                 </div>
                 <div className="mt-1 text-xs text-slate-500 flex items-center gap-2">
                   <span className="capitalize truncate">{need.location}</span>
@@ -124,7 +129,7 @@ export default function PriorityQueue({ needs, selectedNeedId, onSelectNeed }: P
                   <span className="shrink-0">{timeAgo(need.created_at)}</span>
                 </div>
                 <p className="mt-1.5 text-xs text-slate-400 italic truncate">
-                  "{need.raw_message.slice(0, 60)}{need.raw_message.length > 60 ? '…' : ''}"
+                  &ldquo;{need.raw_message.slice(0, 60)}{need.raw_message.length > 60 ? '…' : ''}&rdquo;
                 </p>
               </div>
             </button>
