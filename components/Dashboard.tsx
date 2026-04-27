@@ -1,68 +1,102 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { collection, onSnapshot, doc, updateDoc, increment } from 'firebase/firestore';
+import type L from 'leaflet';
 import { db } from '@/lib/firebase';
-import type { CommunityNeed, Volunteer } from '@/lib/types';
+import type { CommunityNeed, Volunteer, AppNotification } from '@/lib/types';
 
-import PriorityQueue from './PriorityQueue';
-import NeedDetailPanel from './NeedDetailPanel';
-import VolunteerPanel from './VolunteerPanel';
-import VolunteerDrawer from './VolunteerDrawer';
-import VolunteerProfileModal from './VolunteerProfileModal';
-import AssignConfirmDialog from './AssignConfirmDialog';
-import SituationBriefModal from './SituationBriefModal';
+import IconRail from './layout/IconRail';
+import NeedList from './needs/NeedList';
+import NeedDetail from './needs/NeedDetail';
+import VolunteerList from './volunteers/VolunteerList';
+import StatsPanel from './map/StatsPanel';
+import NeedContextCard from './map/NeedContextCard';
+import MapControls from './map/MapControls';
+import NotificationBell from './notifications/NotificationBell';
+import AlertToast from './notifications/AlertToast';
+import AssignConfirmDialog from './dialogs/AssignConfirmDialog';
+import SituationBriefModal from './dialogs/SituationBriefModal';
+import VolunteerDrawer from './dialogs/VolunteerDrawer';
 import Toast from './Toast';
 
-const NeedMap = dynamic(() => import('./NeedMap'), { ssr: false });
+const NeedMap = dynamic(() => import('./map/NeedMap'), { ssr: false });
+
+type ActivePanel = 'stats' | 'alerts' | 'volunteers' | null;
 
 const ESCALATION_POLL_MS = process.env.NEXT_PUBLIC_TEST_MODE === 'true' ? 30_000 : 60_000;
 
 export default function Dashboard() {
-  const [needs, setNeeds] = useState<CommunityNeed[]>([]);
-  const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
-  const [selectedNeed, setSelectedNeed] = useState<CommunityNeed | null>(null);
-  const [assignTarget, setAssignTarget] = useState<{ need: CommunityNeed; volunteer: Volunteer } | null>(null);
-  const [showVolunteerDrawer, setShowVolunteerDrawer] = useState(false);
-  const [profileVolunteer, setProfileVolunteer] = useState<Volunteer | null>(null);
+  const [needs, setNeeds]                 = useState<CommunityNeed[]>([]);
+  const [volunteers, setVolunteers]       = useState<Volunteer[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [selectedNeed, setSelectedNeed]   = useState<CommunityNeed | null>(null);
+  const [assignTarget, setAssignTarget]   = useState<{ need: CommunityNeed; volunteer: Volunteer } | null>(null);
+  const [alertNeed, setAlertNeed]         = useState<CommunityNeed | null>(null);
+  const [activePanel, setActivePanel]     = useState<ActivePanel>('stats');
+  const [showDrawer, setShowDrawer]       = useState(false);
+  const [showResolved, setShowResolved]   = useState(true);
+  const [toast, setToast]                 = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [showBrief, setShowBrief]               = useState(false);
+  const [briefText, setBriefText]               = useState<string | null>(null);
+  const [briefLoading, setBriefLoading]         = useState(false);
+  const [briefGeneratedAt, setBriefGeneratedAt] = useState<number | null>(null);
+  const [detailNeed, setDetailNeed] = useState<CommunityNeed | null>(null);
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
 
-  // Toast
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const prevNeedIds = useRef<Set<string>>(new Set());
   const dismissToast = useCallback(() => setToast(null), []);
 
-  // Situation brief
-  const [showBrief, setShowBrief] = useState(false);
-  const [briefText, setBriefText] = useState<string | null>(null);
-  const [briefLoading, setBriefLoading] = useState(false);
-  const [briefGeneratedAt, setBriefGeneratedAt] = useState<number | null>(null);
-
-  // Real-time Firestore listeners
   useEffect(() => {
     const unsubNeeds = onSnapshot(collection(db, 'needs'), snap => {
-      setNeeds(snap.docs.map(d => ({ id: d.id, ...d.data() } as CommunityNeed)));
+      const incoming = snap.docs.map(d => ({ id: d.id, ...d.data() } as CommunityNeed));
+      const newCritical = incoming.find(
+        n => !prevNeedIds.current.has(n.id) && (n.severity === 'critical' || n.severity === 'high') && n.status === 'open'
+      );
+      if (newCritical) setAlertNeed(newCritical);
+      prevNeedIds.current = new Set(incoming.map(n => n.id));
+      setNeeds(incoming);
     });
+
     const unsubVols = onSnapshot(collection(db, 'volunteers'), snap => {
       setVolunteers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Volunteer)));
     });
-    return () => { unsubNeeds(); unsubVols(); };
+
+    const unsubNotifs = onSnapshot(collection(db, 'notifications'), snap => {
+      setNotifications(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as AppNotification))
+          .sort((a, b) => b.created_at - a.created_at)
+          .slice(0, 50)
+      );
+    });
+
+    return () => { unsubNeeds(); unsubVols(); unsubNotifs(); };
   }, []);
 
-  // Auto-seed volunteers if Firestore is empty
   useEffect(() => {
     fetch('/api/seed', { method: 'POST' }).catch(() => {});
   }, []);
 
-  // Escalation polling
   useEffect(() => {
-    const poll = () => fetch('/api/needs/escalate', { method: 'POST' }).catch(() => {});
-    const timer = setInterval(poll, ESCALATION_POLL_MS);
-    return () => clearInterval(timer);
+    const t = setInterval(
+      () => fetch('/api/needs/escalate', { method: 'POST' }).catch(() => {}),
+      ESCALATION_POLL_MS,
+    );
+    return () => clearInterval(t);
   }, []);
 
   const handleSelectNeed = useCallback((need: CommunityNeed) => {
     setSelectedNeed(prev => prev?.id === need.id ? null : need);
+    setDetailNeed(null);
   }, []);
+
+  const handleViewDetails = useCallback(() => {
+    if (!selectedNeed) return;
+    setDetailNeed(selectedNeed);
+    setActivePanel('alerts');
+  }, [selectedNeed]);
 
   const handleInitiateAssign = useCallback((need: CommunityNeed, volunteer: Volunteer) => {
     setAssignTarget({ need, volunteer });
@@ -71,7 +105,6 @@ export default function Dashboard() {
   const handleConfirmAssign = useCallback(async (message: string) => {
     if (!assignTarget) return;
     const { need, volunteer } = assignTarget;
-
     try {
       const [patchRes, notifyRes] = await Promise.all([
         fetch('/api/needs', {
@@ -85,33 +118,25 @@ export default function Dashboard() {
           body: JSON.stringify({ to: volunteer.phone, message }),
         }),
       ]);
-
       if (!patchRes.ok) throw new Error('Failed to update need');
-
       await updateDoc(doc(db, 'volunteers', volunteer.id), {
         available: false,
         assignmentCount: increment(1),
       });
-
-      const notifyOk = notifyRes.ok;
       setToast({
-        message: notifyOk
+        message: notifyRes.ok
           ? `Assigned to ${volunteer.name} — WhatsApp sent ✓`
-          : `Assigned to ${volunteer.name} (WhatsApp delivery failed)`,
-        type: notifyOk ? 'success' : 'error',
+          : `Assigned to ${volunteer.name} (WhatsApp failed)`,
+        type: notifyRes.ok ? 'success' : 'error',
       });
     } catch (err) {
       console.error('Assignment error:', err);
       setToast({ message: 'Assignment failed. Please try again.', type: 'error' });
     }
-
     setAssignTarget(null);
     setSelectedNeed(null);
+    setDetailNeed(null);
   }, [assignTarget]);
-
-  const handleToggleAvailability = useCallback(async (volunteerId: string, available: boolean) => {
-    await updateDoc(doc(db, 'volunteers', volunteerId), { available });
-  }, []);
 
   const handleResolve = useCallback(async (needId: string) => {
     const need = needs.find(n => n.id === needId);
@@ -130,6 +155,7 @@ export default function Dashboard() {
       setToast({ message: 'Failed to resolve need.', type: 'error' });
     }
     setSelectedNeed(null);
+    setDetailNeed(null);
   }, [needs]);
 
   const handleFetchBrief = useCallback(async () => {
@@ -138,7 +164,7 @@ export default function Dashboard() {
     setBriefText(null);
     try {
       const res = await fetch('/api/needs/brief');
-      if (!res.ok) throw new Error('Brief fetch failed');
+      if (!res.ok) throw new Error();
       const data = await res.json();
       setBriefText(data.brief ?? null);
       setBriefGeneratedAt(Date.now());
@@ -149,120 +175,177 @@ export default function Dashboard() {
     }
   }, []);
 
-  const openCount = needs.filter(n => n.status === 'open').length;
-  const criticalCount = needs.filter(n => n.status === 'open' && n.severity === 'critical').length;
+  const handleMarkNotificationsRead = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    setNotifications(prev => prev.map(n => ids.includes(n.id) ? { ...n, read: true } : n));
+    fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    }).catch(() => {});
+  }, []);
+
+  const openCount   = needs.filter(n => n.status === 'open').length;
+  const resolvedCount = needs.filter(n => n.status === 'resolved').length;
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const liveSelectedNeed = selectedNeed
+    ? needs.find(n => n.id === selectedNeed.id) ?? selectedNeed
+    : null;
+  const liveDetailNeed = detailNeed
+    ? needs.find(n => n.id === detailNeed.id) ?? detailNeed
+    : null;
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
+    <div className="relative w-screen h-screen overflow-hidden" style={{ background: 'var(--bg-base)' }}>
 
-      {/* Header */}
-      <header className="h-14 bg-white border-b border-slate-200 flex items-center px-4 gap-4 shrink-0 z-10">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-900 leading-none">NGO Response Hub</p>
-            <p className="text-xs text-slate-400 leading-none mt-0.5">Mumbai · Real-time</p>
-          </div>
-        </div>
+      {/* Full-screen map */}
+      <div className="absolute inset-0 z-0">
+        <NeedMap
+          needs={needs}
+          selectedNeed={liveSelectedNeed}
+          onSelectNeed={handleSelectNeed}
+          showResolved={showResolved}
+          onMapReady={setMapInstance}
+        />
+      </div>
 
-        <div className="flex-1" />
+      {/* Left icon rail */}
+      <div className="absolute left-0 top-0 h-full z-30">
+        <IconRail
+          activePanel={activePanel}
+          onTogglePanel={setActivePanel}
+          openAlertCount={openCount}
+          unreadNotifCount={unreadCount}
+        />
+      </div>
 
-        {/* Stats */}
-        <div className="hidden sm:flex items-center gap-4 text-sm">
-          {criticalCount > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-red-600 font-semibold">{criticalCount}</span>
-              <span className="text-slate-400">critical</span>
+      {/* Slide-out side panel */}
+      <div
+        className={`absolute left-14 top-0 h-full z-20 ${
+          activePanel ? 'w-80 opacity-100' : 'w-0 opacity-0 pointer-events-none'
+        }`}
+        style={{
+          background: 'rgba(255,255,255,0.85)',
+          backdropFilter: 'blur(24px)',
+          borderRight: '1px solid #e2e8f0',
+          overflow: 'hidden',
+          transition: 'width 420ms cubic-bezier(0.16, 1, 0.3, 1), opacity 320ms cubic-bezier(0.16, 1, 0.3, 1)',
+          boxShadow: activePanel ? '4px 0 24px rgba(15, 23, 42, 0.04)' : 'none',
+        }}
+      >
+        <div className="w-80 h-full overflow-hidden flex flex-col">
+          {activePanel === 'stats' && (
+            <div className="p-3 overflow-y-auto flex-1">
+              <StatsPanel needs={needs} volunteers={volunteers} />
             </div>
           )}
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500" />
-            <span className="text-slate-600 font-medium">{openCount}</span>
-            <span className="text-slate-400">open</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-slate-500 text-xs">Live</span>
-          </div>
-        </div>
-
-        {/* Situation Brief */}
-        <button
-          onClick={handleFetchBrief}
-          className="hidden sm:flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors border border-slate-200"
-        >
-          <span>📋</span>
-          <span>Situation Brief</span>
-        </button>
-
-        {/* Add volunteer */}
-        <button
-          onClick={() => setShowVolunteerDrawer(true)}
-          className="flex items-center gap-1.5 text-sm font-semibold bg-blue-600 text-white px-3.5 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          Add Volunteer
-        </button>
-      </header>
-
-      {/* Body — 3 panels */}
-      <div className="flex flex-1 min-h-0">
-
-        {/* Left — Needs queue / Need detail */}
-        <div className="w-80 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-hidden">
-          {selectedNeed ? (
-            <NeedDetailPanel
-              need={selectedNeed}
-              volunteers={volunteers}
-              onBack={() => setSelectedNeed(null)}
-              onInitiateAssign={handleInitiateAssign}
-              onResolve={handleResolve}
-            />
-          ) : (
-            <PriorityQueue
+          {activePanel === 'alerts' && !liveDetailNeed && (
+            <NeedList
               needs={needs}
-              selectedNeedId={selectedNeed ? (selectedNeed as CommunityNeed).id : undefined}
+              selectedNeedId={liveSelectedNeed?.id}
               onSelectNeed={handleSelectNeed}
             />
           )}
-        </div>
-
-        {/* Center — Map */}
-        <div className="flex-1 min-w-0 relative">
-          <NeedMap
-            needs={needs}
-            volunteers={volunteers}
-            selectedNeed={selectedNeed}
-            onSelectNeed={handleSelectNeed}
-            onInitiateAssign={handleInitiateAssign}
-          />
-        </div>
-
-        {/* Right — Volunteer roster */}
-        <div className="w-72 shrink-0 bg-white border-l border-slate-200 flex flex-col overflow-hidden">
-          <VolunteerPanel
-            volunteers={volunteers}
-            onViewProfile={setProfileVolunteer}
-            onAddVolunteer={() => setShowVolunteerDrawer(true)}
-          />
+          {activePanel === 'alerts' && liveDetailNeed && (
+            <NeedDetail
+              need={liveDetailNeed}
+              volunteers={volunteers}
+              onBack={() => setDetailNeed(null)}
+              onInitiateAssign={handleInitiateAssign}
+              onResolve={handleResolve}
+            />
+          )}
+          {activePanel === 'volunteers' && (
+            <VolunteerList
+              volunteers={volunteers}
+              onAddVolunteer={() => setShowDrawer(true)}
+            />
+          )}
         </div>
       </div>
 
-      {/* Overlays */}
-      {showVolunteerDrawer && (
-        <VolunteerDrawer onClose={() => setShowVolunteerDrawer(false)} />
-      )}
+      {/* Top overlay bar */}
+      <div
+        className="absolute top-0 left-14 right-0 h-14 z-20 flex items-center justify-between px-5 gap-3 pointer-events-none"
+        style={{ background: 'linear-gradient(to bottom, rgba(248,250,252,0.7) 0%, transparent 100%)' }}
+      >
+        {/* Left: filter pills */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <button
+            onClick={() => setShowResolved(s => !s)}
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+              showResolved
+                ? 'bg-white/80 backdrop-blur-md border-slate-200 text-slate-600 hover:text-slate-900'
+                : 'bg-blue-50 border-blue-300 text-blue-600'
+            }`}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              {showResolved ? <path d="M20 6 9 17l-5-5"/> : <path d="M2 2l20 20M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>}
+            </svg>
+            {showResolved ? 'Show resolved' : 'Hidden'} <span className="opacity-60">({resolvedCount})</span>
+          </button>
+        </div>
 
-      {profileVolunteer && (
-        <VolunteerProfileModal
-          volunteer={profileVolunteer}
-          onClose={() => setProfileVolunteer(null)}
-          onToggleAvailability={handleToggleAvailability}
-        />
-      )}
+        {/* Right: actions */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-200 bg-emerald-50">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs text-emerald-600 font-semibold">Live</span>
+          </div>
+
+          <button
+            onClick={handleFetchBrief}
+            className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-blue-400 transition-colors"
+            style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(8px)' }}
+          >
+            📋 Brief
+          </button>
+
+          <NotificationBell notifications={notifications} onMarkRead={handleMarkNotificationsRead} />
+
+          {/* Lime accent CTA */}
+          <button
+            onClick={() => setShowDrawer(true)}
+            className="flex items-center gap-1.5 text-xs font-bold text-[#0a1523] px-3.5 py-2 rounded-full transition-all hover:scale-[1.02]"
+            style={{ background: '#c5f548', boxShadow: '0 4px 16px rgba(197, 245, 72, 0.3)' }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Add Volunteer
+            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-white/15 text-[10px] font-bold">{volunteers.length}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Floating context card */}
+      <div
+        className="absolute right-4 z-20 pointer-events-none"
+        style={{ top: '4rem', maxHeight: 'calc(100vh - 5rem)', overflowY: 'auto' }}
+      >
+        {liveSelectedNeed && (
+          <div className="pointer-events-auto">
+            <NeedContextCard
+              key={liveSelectedNeed.id}
+              need={liveSelectedNeed}
+              volunteers={volunteers}
+              onClose={() => { setSelectedNeed(null); setDetailNeed(null); }}
+              onInitiateAssign={handleInitiateAssign}
+              onResolve={handleResolve}
+              onViewDetails={handleViewDetails}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Map controls bottom-right */}
+      <div className="absolute bottom-5 right-5 z-20">
+        <MapControls map={mapInstance} />
+      </div>
+
+      {/* Overlays */}
+      {showDrawer && <VolunteerDrawer onClose={() => setShowDrawer(false)} />}
 
       {assignTarget && (
         <AssignConfirmDialog
@@ -283,9 +366,15 @@ export default function Dashboard() {
         />
       )}
 
-      {toast && (
-        <Toast message={toast.message} type={toast.type} onDismiss={dismissToast} />
+      {alertNeed && (
+        <AlertToast
+          need={alertNeed}
+          onDismiss={() => setAlertNeed(null)}
+          onView={() => { setSelectedNeed(alertNeed); setAlertNeed(null); }}
+        />
       )}
+
+      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismissToast} />}
     </div>
   );
 }

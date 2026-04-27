@@ -2,101 +2,97 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Critical: This is Next.js 16
-
-This is **Next.js 16.2.4**. Before writing any Next.js-specific code, check `node_modules/next/dist/docs/` for current conventions. Heed deprecation notices.
-
 ## Commands
 
 ```bash
-pnpm dev        # start dev server
+pnpm dev        # start dev server (http://localhost:3000)
 pnpm build      # production build
 pnpm start      # start production server
 pnpm lint       # run eslint
+pnpm exec tsc --noEmit  # type-check without emitting
 ```
 
-No test runner is configured yet.
+No test runner is configured.
 
-## Project: NGO Community Needs + Volunteer Matching
+## Project
 
-Real-time coordination platform that turns WhatsApp field reports into actionable, mapped community needs and matches volunteers to tasks.
-
-**Three users:**
-- **Field worker (Rahul)** — sends free-text WhatsApp messages. Zero behavior change required.
-- **NGO coordinator (Priya)** — web dashboard: live needs on a map, assigns volunteers.
-- **Volunteer (Arjun)** — receives WhatsApp notifications when matched.
+Real-time NGO disaster response platform for Mumbai. Field workers send free-text WhatsApp messages (Hindi/Hinglish/English), Gemini 2.0 Flash extracts structured data, Firebase stores it, and a coordinator dashboard assigns volunteers who get WhatsApp notifications and reply with status updates.
 
 **Core data flow:**
 ```
-WhatsApp message → Twilio webhook → /api/whatsapp/incoming
-  → Gemini Flash (extracts: location, need_type, severity, affected_count as JSON)
-  → Firebase Firestore (stores structured need)
-  → Dashboard real-time listener (Firestore onSnapshot)
-  → Volunteer matching score (0.5×proximity + 0.3×skill + 0.2×availability)
-  → Twilio outbound WhatsApp → volunteer notification
+WhatsApp → Twilio webhook → /api/whatsapp/incoming
+  → check if sender is a volunteer with active assignment → handle status reply
+  → else: Gemini extracts {location, need_type, severity, affected_count}
+  → resolveWard() maps location name → {lat, lng}
+  → Firestore 'needs' collection
+  → Dashboard onSnapshot → coordinator assigns volunteer
+  → /api/whatsapp/notify sends task to volunteer
+  → volunteer replies → incoming route updates need (eta, status, auto-resolve)
 ```
 
-## Tech Stack
-
-| Package | Purpose |
-|---|---|
-| `firebase` | Client SDK — browser real-time (onSnapshot) only |
-| `firebase-admin` | Server SDK — used in all API Route Handlers |
-| `@google/generative-ai` | Gemini 2.0 Flash for need extraction |
-| `twilio` | WhatsApp inbound webhook + outbound notifications |
-| `leaflet` + `react-leaflet` | Map with markers, no API key needed |
+**Escalation:** Dashboard polls `/api/needs/escalate` every 30s (TEST_MODE) / 60s (prod). Any `critical` + `open` need older than 1 min (TEST_MODE) / 10 min (prod) gets a WhatsApp alert to `COORDINATOR_PHONE` and is marked `escalated: true`.
 
 ## Architecture
 
-**App Router** — all routes under `app/`. API routes use Route Handler convention (`app/api/.../route.ts`).
+**Next.js 16.2.4 App Router.** `app/page.tsx` is a Server Component that renders `<Dashboard />` via dynamic import.
+
+### Two Firebase SDKs — never mix them
+
+- `lib/firebase.ts` — client SDK, browser only, used for `onSnapshot` real-time listeners in `'use client'` components
+- `lib/firebase-admin.ts` — server SDK, used exclusively in API route handlers (`app/api/`)
+
+### API routes (`app/api/`)
+
+| Route | Method | Purpose |
+|---|---|---|
+| `whatsapp/incoming` | POST | Twilio webhook — volunteer reply detection OR new field report + auto-reply |
+| `whatsapp/notify` | POST | Send outbound WhatsApp via Twilio |
+| `needs` | GET / PATCH | Fetch all needs / update status or assignment |
+| `needs/escalate` | POST | Check for unattended critical needs, send alerts |
+| `needs/brief` | GET | Gemini-generated situation summary |
+| `volunteers` | GET / POST | Fetch all / register new volunteer |
+| `seed` | POST | Seed 12 demo volunteers (skips if ≥ 12 already exist) |
+| `fix-phones` | POST | Admin: bulk-update all volunteer phones (requires `x-admin-secret` header) |
+
+### Component responsibilities
+
+- `Dashboard.tsx` — owns all state: needs, volunteers, selectedNeed, assignTarget, toast, brief modal, escalation polling interval
+- `NeedMap.tsx` — Leaflet map, always imported `dynamic(() => import(...), { ssr: false })`; `MapController` child uses `useMap()` for `flyTo`
+- `AssignConfirmDialog.tsx` — 2-step confirm with editable WhatsApp message preview
+- `SituationBriefModal.tsx` — displays Gemini brief, has Refresh button
+- `Toast.tsx` — auto-dismisses after 4s via `setTimeout` in `useEffect`
+
+### Key lib files
+
+- `lib/matching.ts` — `scoreVolunteer()`: `0.5 × proximity + 0.3 × skill + 0.2 × availability`. Proximity uses Haversine; score = 0 beyond 10 km.
+- `lib/wards.ts` — **hardcoded Mumbai wards only**. `resolveWard()` does fuzzy/Hinglish matching. Falls back to `{lat: 19.0376, lng: 72.854}` (central Mumbai) if no match. Never call an external geocoding API.
+- `lib/gemini.ts` — `extractNeed()` calls Gemini 2.0 Flash; `parseGeminiJson()` strips markdown fences before `JSON.parse`. Falls back to keyword mock on error. Set `GEMINI_MOCK=true` to bypass API entirely.
+- `lib/types.ts` — single source of truth for `CommunityNeed`, `Volunteer`, `NeedExtraction`. `CommunityNeed` includes `escalated?`, `escalated_at?`, `volunteer_eta?`, `volunteer_reply?`.
+
+## Critical implementation rules
+
+- **Twilio webhook**: parse with `request.formData()`, not `request.json()` — Twilio POSTs `application/x-www-form-urlencoded`. Always return HTTP 200 with `<?xml version="1.0"?><Response></Response>` even on errors — non-200 triggers Twilio retries and duplicate needs.
+- **Volunteer reply detection**: `incoming/route.ts` queries Firestore for a volunteer by phone, then checks for an active `assigned` need. Unrecognised replies from volunteers still return `true` (no second field report created). Only falls through to field-report flow if sender is not a registered volunteer OR has no active assignment.
+- **`FieldValue.increment` and `FieldValue.delete`**: import from `firebase-admin/firestore` in API routes. Use `increment(1)` for `assignmentCount` when marking done, `delete()` to remove `assigned_volunteer_id` when reopening a need.
+- **`increment` in client components**: import from `firebase/firestore` (client SDK), not admin.
+- **Overlay z-index**: all modals and drawers use `z-[9999]` — Leaflet map controls sit at z-index 1000.
+- **onSnapshot cleanup**: always return the unsubscribe function from `useEffect`. Both `needs` and `volunteers` collections are subscribed in a single effect in `Dashboard.tsx`.
+- **`NEXT_PUBLIC_TEST_MODE`**: read at build time (Next.js inlines `NEXT_PUBLIC_` vars). The escalation route reads `process.env.NEXT_PUBLIC_TEST_MODE` at request time on the server — this works because the value is baked in at build.
+
+## Environment variables
 
 ```
-app/
-  page.tsx                          # Priya's dashboard shell (Server Component)
-  volunteers/page.tsx               # Volunteer self-registration form
-  api/
-    whatsapp/incoming/route.ts      # Twilio inbound webhook
-    whatsapp/notify/route.ts        # Outbound WhatsApp sender
-    needs/route.ts                  # GET all needs, PATCH to assign volunteer
-    volunteers/route.ts             # GET all volunteers, POST to register
-components/
-  Dashboard.tsx                     # 'use client' — onSnapshot state, 3-panel layout
-  NeedMap.tsx                       # 'use client' — Leaflet map (always dynamic import ssr:false)
-  PriorityQueue.tsx                 # Need list sorted by severity
-  VolunteerPanel.tsx                # Volunteer roster with availability toggle
-lib/
-  types.ts          # Shared interfaces: CommunityNeed, Volunteer, NeedExtraction
-  firebase.ts       # Client SDK singleton (uses NEXT_PUBLIC_ vars)
-  firebase-admin.ts # Admin SDK singleton (uses FIREBASE_SERVICE_ACCOUNT_KEY)
-  gemini.ts         # Gemini extraction + mock fallback
-  twilio.ts         # Twilio client + sendWhatsApp helper
-  matching.ts       # Volunteer scoring algorithm
-  wards.ts          # Hardcoded Mumbai ward → lat/lng lookup
-```
-
-## Key Implementation Rules
-
-- **Two Firebase SDKs**: `lib/firebase.ts` (client, browser only, `onSnapshot`) vs `lib/firebase-admin.ts` (server, API routes only). Never import `firebase-admin` in client components or vice versa.
-- **Ward geocoding**: Never call a geocoding API. Always use `resolveWard()` from `lib/wards.ts` — handles fuzzy/Hinglish spellings.
-- **Gemini mock mode**: Set `GEMINI_MOCK=true` in `.env.local` to use keyword-based extraction without hitting the API. Flip to `false` when billing is enabled.
-- **Leaflet + Next.js**: `NeedMap.tsx` must be `'use client'` and always imported with `dynamic(() => import(...), { ssr: false })`. Import `leaflet/dist/leaflet.css` inside the component. Fix broken marker icons with `L.Icon.Default.mergeOptions(...)`.
-- **Twilio webhook**: Parse with `request.formData()` not `request.json()` — Twilio POSTs `application/x-www-form-urlencoded`. Always return HTTP 200 with empty `<Response/>` TwiML even on errors — non-200 causes Twilio to retry and creates duplicates.
-- **Twilio sandbox**: Each demo phone must opt in by texting "join [sandbox-code]" to +14155238886 before the demo.
-- **Firebase rules**: Open (`allow read, write: if true`) for demo. Tighten before production.
-- **Path alias**: `@/*` maps to repo root (tsconfig).
-- **onSnapshot in dashboard**: Must be in a `'use client'` component inside `useEffect` with cleanup (`return unsubscribe`). Cannot use real-time listeners in Server Components.
-
-## Environment Variables
-
-```
-NEXT_PUBLIC_FIREBASE_API_KEY        # client SDK
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN    # client SDK
-NEXT_PUBLIC_FIREBASE_PROJECT_ID     # client SDK
-NEXT_PUBLIC_FIREBASE_APP_ID         # client SDK
-FIREBASE_SERVICE_ACCOUNT_KEY        # admin SDK — full service account JSON as one line
-GEMINI_API_KEY                      # Gemini API
-GEMINI_MOCK                         # set to "true" to bypass Gemini API (keyword mock)
+NEXT_PUBLIC_FIREBASE_API_KEY
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+NEXT_PUBLIC_FIREBASE_PROJECT_ID
+NEXT_PUBLIC_FIREBASE_APP_ID
+FIREBASE_SERVICE_ACCOUNT_KEY        # full service account JSON as a single line
+GEMINI_API_KEY
+GEMINI_MOCK                         # "true" = keyword mock, no API calls
 TWILIO_ACCOUNT_SID
 TWILIO_AUTH_TOKEN
 TWILIO_WHATSAPP_FROM                # format: whatsapp:+14155238886
+COORDINATOR_PHONE                   # receives escalation alerts, format: +91XXXXXXXXXX
+NEXT_PUBLIC_TEST_MODE               # "true" = 1-min escalation / 30s poll; "false" = 10-min / 60s
+ADMIN_SECRET                        # required as x-admin-secret header for /api/fix-phones
 ```

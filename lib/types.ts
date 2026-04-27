@@ -21,6 +21,8 @@ export interface CommunityNeed {
   // Volunteer status updates via WhatsApp reply
   volunteer_eta?: string;
   volunteer_reply?: string;
+  // Media from field report
+  video_url?: string;
 }
 
 export interface Volunteer {
@@ -44,4 +46,15 @@ export interface NeedExtraction {
   need_type: NeedType;
   severity: NeedSeverity;
   affected_count: number;
+}
+
+export interface AppNotification {
+  id: string;
+  type: 'new_need' | 'escalation' | 'volunteer_reply' | 'resolved';
+  title: string;
+  message: string;
+  severity?: NeedSeverity;
+  need_id?: string;
+  created_at: number;
+  read: boolean;
 }

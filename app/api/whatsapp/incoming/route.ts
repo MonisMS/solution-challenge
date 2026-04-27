@@ -102,6 +102,11 @@ export async function POST(request: NextRequest) {
     const wasVolunteerReply = await handleVolunteerReply(phone, body);
     if (wasVolunteerReply) return twimlOk();
 
+    // Extract media (video) from Twilio if present
+    const mediaUrl  = formData.get('MediaUrl0') as string | null;
+    const mediaType = formData.get('MediaContentType0') as string | null;
+    const video_url = mediaUrl && mediaType?.startsWith('video/') ? mediaUrl : undefined;
+
     // Field report flow
     const extraction = await extractNeed(body);
     const coords = resolveWard(extraction.location) ?? { lat: 19.0376, lng: 72.854 };
@@ -117,9 +122,21 @@ export async function POST(request: NextRequest) {
       status: 'open',
       created_at: Date.now(),
       source_phone: phone,
+      ...(video_url ? { video_url } : {}),
     };
 
-    await adminDb.collection('needs').add(need);
+    const needRef = await adminDb.collection('needs').add(need);
+
+    // Create notification for dashboard
+    await adminDb.collection('notifications').add({
+      type: 'new_need',
+      title: `New ${extraction.severity} ${extraction.need_type} need`,
+      message: `${extraction.location} — ${extraction.affected_count} people affected`,
+      severity: extraction.severity,
+      need_id: needRef.id,
+      created_at: Date.now(),
+      read: false,
+    });
 
     // Auto-reply confirmation to field worker
     const sevEmoji = extraction.severity === 'critical' ? '🚨' : extraction.severity === 'high' ? '⚠️' : '✓';
