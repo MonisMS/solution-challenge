@@ -38,7 +38,7 @@ export default function AlertToast({ need, onDismiss, onView }: Props) {
 
   return (
     <div
-      className={`fixed top-4 right-4 z-[9999] w-80 transition-all duration-300 ${
+      className={`fixed top-4 right-4 left-4 sm:left-auto z-[9999] sm:w-80 transition-all duration-300 ${
         visible ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
       }`}
     >

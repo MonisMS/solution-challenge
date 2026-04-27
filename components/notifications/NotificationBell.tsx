@@ -62,7 +62,7 @@ export default function NotificationBell({ notifications, onMarkRead }: Props) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-11 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-900/15 z-[9999] overflow-hidden">
+        <div className="absolute right-0 top-11 w-72 sm:w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-900/15 z-[9999] overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
             <span className="text-sm font-semibold text-slate-900">Notifications</span>
             {notifications.length > 0 && (

@@ -70,7 +70,7 @@ export default function VolunteerDrawer({ onClose }: Props) {
         }}
       >
 
-        <div className="flex items-center justify-between px-7 pt-6 pb-2">
+        <div className="flex items-center justify-between px-5 sm:px-7 pt-5 sm:pt-6 pb-2">
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.18em]">New volunteer</p>
           <button
             onClick={onClose}

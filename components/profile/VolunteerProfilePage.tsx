@@ -37,7 +37,7 @@ export default function VolunteerProfilePage({ volunteer: v }: Props) {
 
   return (
     <div className="min-h-screen relative">
-      <div className="px-8 py-5 flex items-center justify-between border-b border-slate-200/70">
+      <div className="px-5 sm:px-8 py-4 sm:py-5 flex items-center justify-between border-b border-slate-200/70">
         <Link
           href="/"
           className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors"
@@ -50,20 +50,20 @@ export default function VolunteerProfilePage({ volunteer: v }: Props) {
         <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.18em]">Volunteer profile</span>
       </div>
 
-      <div className="max-w-4xl mx-auto px-8 py-12">
+      <div className="max-w-4xl mx-auto px-5 sm:px-8 py-8 sm:py-12">
 
-        {/* Hero — typography only */}
-        <div className="flex items-start gap-6">
+        {/* Hero — stacks on mobile, side-by-side on sm+ */}
+        <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
           <Avatar name={v.name} size="xl" />
-          <div className="flex-1 pt-2">
+          <div className="flex-1 sm:pt-2 min-w-0">
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.18em]">{role}</p>
-            <h1 className="mt-2 text-4xl font-bold text-slate-900 tracking-tight leading-none">{v.name}</h1>
-            <p className="mt-3 text-base text-slate-600">
+            <h1 className="mt-2 text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight leading-tight break-words">{v.name}</h1>
+            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-600">
               <span className="capitalize">{v.ward}</span>, Mumbai
               <span className="mx-2 text-slate-300">·</span>
               <span>Joined {timeAgo(v.registered_at)}</span>
             </p>
-            <div className="mt-4 inline-flex items-center gap-2 text-xs">
+            <div className="mt-3 sm:mt-4 inline-flex items-center gap-2 text-xs">
               <span className={`w-1.5 h-1.5 rounded-full ${v.available ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
               <span className={`font-semibold ${v.available ? 'text-emerald-700' : 'text-slate-500'}`}>
                 {v.available ? 'Available for dispatch' : 'Currently unavailable'}
@@ -72,10 +72,10 @@ export default function VolunteerProfilePage({ volunteer: v }: Props) {
           </div>
         </div>
 
-        <div className="h-px bg-slate-200/70 my-10" />
+        <div className="h-px bg-slate-200/70 my-8 sm:my-10" />
 
         {/* Two-column body */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-10 lg:gap-x-12 gap-y-8 sm:gap-y-10">
           <div className="md:col-span-2 space-y-10">
             {v.bio && (
               <section>

@@ -18,7 +18,7 @@ export default function Toast({ message, type, onDismiss }: Props) {
 
   return (
     <div
-      className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-2xl shadow-slate-900/15 max-w-sm"
+      className="fixed bottom-4 right-4 left-4 sm:left-auto z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-2xl shadow-slate-900/15 max-w-sm"
       style={{
         background: isSuccess ? 'rgba(5,150,105,0.15)' : 'rgba(220,38,38,0.15)',
         borderColor: isSuccess ? 'rgba(5,150,105,0.4)' : 'rgba(220,38,38,0.4)',

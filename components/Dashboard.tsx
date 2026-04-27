@@ -92,6 +92,10 @@ export default function Dashboard() {
   const handleSelectNeed = useCallback((need: CommunityNeed) => {
     setSelectedNeed(prev => prev?.id === need.id ? null : need);
     setDetailNeed(null);
+    // On mobile, close the side panel so the bottom sheet has the spotlight
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setActivePanel(null);
+    }
   }, []);
 
   const handleViewDetails = useCallback(() => {
@@ -266,21 +270,29 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* Mobile backdrop when panel is open */}
+      {activePanel && (
+        <div
+          onClick={() => setActivePanel(null)}
+          className="md:hidden absolute inset-0 z-10 bg-slate-900/20 backdrop-blur-[2px]"
+        />
+      )}
+
       {/* Slide-out side panel */}
       <div
         className={`absolute left-14 top-0 h-full z-20 ${
-          activePanel ? 'w-80 opacity-100' : 'w-0 opacity-0 pointer-events-none'
-        }`}
+          activePanel ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        } ${activePanel ? 'w-[calc(100vw-3.5rem)] max-w-sm md:w-80' : 'w-0'}`}
         style={{
-          background: 'rgba(255,255,255,0.85)',
+          background: 'rgba(255,255,255,0.92)',
           backdropFilter: 'blur(24px)',
           borderRight: '1px solid #e2e8f0',
           overflow: 'hidden',
           transition: 'width 420ms cubic-bezier(0.16, 1, 0.3, 1), opacity 320ms cubic-bezier(0.16, 1, 0.3, 1)',
-          boxShadow: activePanel ? '4px 0 24px rgba(15, 23, 42, 0.04)' : 'none',
+          boxShadow: activePanel ? '4px 0 24px rgba(15, 23, 42, 0.06)' : 'none',
         }}
       >
-        <div className="w-80 h-full overflow-hidden flex flex-col">
+        <div className="w-[calc(100vw-3.5rem)] max-w-sm md:w-80 h-full overflow-hidden flex flex-col">
           {activePanel === 'stats' && (
             <div className="p-3 overflow-y-auto flex-1">
               <StatsPanel needs={needs} volunteers={volunteers} />
@@ -315,36 +327,38 @@ export default function Dashboard() {
 
       {/* Top overlay bar */}
       <div
-        className="absolute top-0 left-14 right-0 h-14 z-20 flex items-center justify-between px-5 gap-3 pointer-events-none"
-        style={{ background: 'linear-gradient(to bottom, rgba(248,250,252,0.7) 0%, transparent 100%)' }}
+        className="absolute top-0 left-14 right-0 h-14 z-20 flex items-center justify-between px-3 sm:px-5 gap-2 pointer-events-none"
+        style={{ background: 'linear-gradient(to bottom, rgba(248,250,252,0.85) 0%, transparent 100%)' }}
       >
-        {/* Left: filter pills */}
-        <div className="flex items-center gap-2 pointer-events-auto">
+        {/* Left: filter pill */}
+        <div className="flex items-center gap-2 pointer-events-auto min-w-0">
           <button
             onClick={() => setShowResolved(s => !s)}
-            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+            className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-full border transition-colors whitespace-nowrap ${
               showResolved
                 ? 'bg-white/80 backdrop-blur-md border-slate-200 text-slate-600 hover:text-slate-900'
                 : 'bg-blue-50 border-blue-300 text-blue-600'
             }`}
+            title={showResolved ? 'Hide resolved' : 'Show resolved'}
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               {showResolved ? <path d="M20 6 9 17l-5-5"/> : <path d="M2 2l20 20M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>}
             </svg>
-            {showResolved ? 'Show resolved' : 'Hidden'} <span className="opacity-60">({resolvedCount})</span>
+            <span className="hidden sm:inline">{showResolved ? 'Show resolved' : 'Hidden'} </span>
+            <span className="opacity-60">({resolvedCount})</span>
           </button>
         </div>
 
         {/* Right: actions */}
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-200 bg-emerald-50">
+        <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-200 bg-emerald-50">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-xs text-emerald-600 font-semibold">Live</span>
           </div>
 
           <button
             onClick={handleFetchBrief}
-            className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-blue-400 transition-colors"
+            className="hidden md:flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-blue-400 transition-colors"
             style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(8px)' }}
           >
             📋 Brief
@@ -355,42 +369,52 @@ export default function Dashboard() {
           {/* Lime accent CTA */}
           <button
             onClick={() => setShowDrawer(true)}
-            className="flex items-center gap-1.5 text-xs font-bold text-[#0a1523] px-3.5 py-2 rounded-full transition-all hover:scale-[1.02]"
+            className="flex items-center gap-1.5 text-xs font-bold text-[#0a1523] px-3 sm:px-3.5 py-2 rounded-full transition-all hover:scale-[1.02] whitespace-nowrap"
             style={{ background: '#c5f548', boxShadow: '0 4px 16px rgba(197, 245, 72, 0.3)' }}
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
               <path d="M12 5v14M5 12h14"/>
             </svg>
-            Add Volunteer
-            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-white/15 text-[10px] font-bold">{volunteers.length}</span>
+            <span className="hidden sm:inline">Add Volunteer</span>
+            <span className="sm:hidden">Add</span>
+            <span className="ml-0.5 sm:ml-1 px-1.5 py-0.5 rounded-full bg-white/15 text-[10px] font-bold">{volunteers.length}</span>
           </button>
         </div>
       </div>
 
-      {/* Floating context card */}
-      <div
-        className="absolute right-4 z-20 pointer-events-none"
-        style={{ top: '4rem', maxHeight: 'calc(100vh - 5rem)', overflowY: 'auto' }}
-      >
-        {liveSelectedNeed && (
-          <div className="pointer-events-auto">
-            <NeedContextCard
-              key={liveSelectedNeed.id}
-              need={liveSelectedNeed}
-              volunteers={volunteers}
-              onClose={() => { setSelectedNeed(null); setDetailNeed(null); }}
-              onInitiateAssign={handleInitiateAssign}
-              onResolve={handleResolve}
-              onReassign={handleReassign}
-              onContactVolunteer={openContact}
-              onViewDetails={handleViewDetails}
-            />
+      {/* Floating context card / mobile bottom sheet */}
+      {liveSelectedNeed && (
+        <>
+          {/* Mobile backdrop — taps close the sheet */}
+          <div
+            onClick={() => { setSelectedNeed(null); setDetailNeed(null); }}
+            className="md:hidden absolute inset-0 z-30 bg-slate-900/15 backdrop-blur-[1px]"
+          />
+          <div
+            className="absolute z-40 pointer-events-none
+                       inset-x-0 bottom-0
+                       md:inset-x-auto md:bottom-auto md:right-4 md:top-16
+                       md:max-h-[calc(100vh-5rem)] md:overflow-y-auto"
+          >
+            <div className="pointer-events-auto">
+              <NeedContextCard
+                key={liveSelectedNeed.id}
+                need={liveSelectedNeed}
+                volunteers={volunteers}
+                onClose={() => { setSelectedNeed(null); setDetailNeed(null); }}
+                onInitiateAssign={handleInitiateAssign}
+                onResolve={handleResolve}
+                onReassign={handleReassign}
+                onContactVolunteer={openContact}
+                onViewDetails={handleViewDetails}
+              />
+            </div>
           </div>
-        )}
-      </div>
+        </>
+      )}
 
-      {/* Map controls bottom-right */}
-      <div className="absolute bottom-5 right-5 z-20">
+      {/* Map controls — desktop only */}
+      <div className="hidden md:block absolute bottom-5 right-5 z-20">
         <MapControls map={mapInstance} />
       </div>
 

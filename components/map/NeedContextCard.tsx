@@ -59,16 +59,16 @@ export default function NeedContextCard({
   return (
     <>
       <div
-        className={visible ? 'opacity-100' : 'opacity-0'}
-        style={{
-          transform: visible ? 'translateX(0) scale(1)' : 'translateX(20px) scale(0.97)',
-          transition: 'transform 480ms cubic-bezier(0.16, 1, 0.3, 1), opacity 280ms ease-out',
-        }}
+        className={`context-card-enter w-full md:w-[340px] ${visible ? '' : 'opacity-0'}`}
       >
         <div
-          className="w-[340px] rounded-2xl border border-slate-200/70 overflow-hidden shadow-2xl shadow-slate-900/10"
-          style={{ background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(24px) saturate(140%)' }}
+          className="w-full rounded-t-3xl md:rounded-2xl border border-slate-200/70 shadow-2xl shadow-slate-900/15 md:max-h-none max-h-[82vh] overflow-y-auto md:overflow-hidden"
+          style={{ background: 'rgba(255,255,255,0.96)', backdropFilter: 'blur(24px) saturate(140%)' }}
         >
+          {/* Mobile drag handle */}
+          <div className="md:hidden flex justify-center pt-2 pb-1 shrink-0">
+            <div className="w-10 h-1 rounded-full bg-slate-300" />
+          </div>
           {/* ── Video / placeholder hero ── */}
           <div
             className="relative cursor-pointer group overflow-hidden"

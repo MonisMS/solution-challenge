@@ -133,3 +133,27 @@ input, textarea, select {
 /* Hover lift utility */
 .hover-lift { transition: transform 250ms var(--ease-spring), box-shadow 250ms var(--ease-spring); }
 .hover-lift:hover { transform: translateY(-1px); }
+
+/* Bottom sheet slide-up (mobile context card) */
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* Context card uses slide-in on desktop, slide-up on mobile */
+.context-card-enter {
+  animation: slide-in-right 420ms var(--ease-spring) both;
+}
+@media (max-width: 767px) {
+  .context-card-enter {
+    animation: slide-up 380ms var(--ease-spring) both;
+  }
+}
+
+/* Disable the body noise overlay on mobile to save GPU + avoid stretch artifacts */
+@media (max-width: 767px) {
+  body::before { display: none; }
+}
+
+/* Prevent horizontal scroll on small screens */
+html, body { overflow-x: hidden; }

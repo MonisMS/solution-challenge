@@ -42,9 +42,18 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# claude
+# AI / agent artifacts — internal scratch files, not for source control
 CLAUDE.md
+AGENTS.md
 PLAN.md
+NOTES.md
+SCRATCH.md
+TODO.md
+.claude/
+.cursor/
+.aider*
+.continue/
+*.agent.md
 
 # firebase
 .firebase/
