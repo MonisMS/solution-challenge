@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { CommunityNeed, Volunteer } from '@/lib/types';
 import Avatar from '@/components/ui/Avatar';
 import { getTopMatches, haversineKm, scoreVolunteer } from '@/lib/matching';
@@ -32,10 +33,17 @@ interface Props {
   onBack: () => void;
   onInitiateAssign: (need: CommunityNeed, volunteer: Volunteer) => void;
   onResolve?: (needId: string) => void;
+  onReassign?: (needId: string) => void;
+  onContactVolunteer?: (volunteer: Volunteer, context?: string) => void;
 }
 
-export default function NeedDetail({ need, volunteers, onBack, onInitiateAssign, onResolve }: Props) {
+export default function NeedDetail({
+  need, volunteers, onBack, onInitiateAssign, onResolve, onReassign, onContactVolunteer,
+}: Props) {
   const matches = getTopMatches(need, volunteers, 5);
+  const assignedVol = need.assigned_volunteer_id
+    ? volunteers.find(v => v.id === need.assigned_volunteer_id)
+    : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -92,33 +100,72 @@ export default function NeedDetail({ need, volunteers, onBack, onInitiateAssign,
           </p>
         </div>
 
-        {/* Status */}
-        {need.status === 'assigned' && (
-          <div className="px-5 py-5 border-b border-slate-200/70">
-            <div className="flex items-center gap-2.5 mb-3">
+        {/* Assigned volunteer block */}
+        {need.status === 'assigned' && assignedVol && (
+          <div className="px-5 py-6 border-b border-slate-200/70">
+            <div className="flex items-center gap-2 mb-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-700">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
-              <span className="text-[10px] font-semibold text-cyan-700 uppercase tracking-[0.18em]">Volunteer dispatched</span>
+              Volunteer dispatched
+              {need.volunteer_eta && (
+                <span className="ml-auto normal-case tracking-normal text-cyan-700/80 font-medium text-xs">
+                  {need.volunteer_eta}
+                </span>
+              )}
             </div>
-            {(need.volunteer_eta || need.volunteer_reply) && (
-              <div className="space-y-2 mb-3">
-                {need.volunteer_eta && (
-                  <p className="text-sm text-slate-700">
-                    <span className="text-slate-400 font-medium">Status</span>
-                    <span className="mx-2 text-slate-300">→</span>
-                    <span className="font-medium">{need.volunteer_eta}</span>
-                  </p>
-                )}
-                {need.volunteer_reply && (
-                  <p className="text-sm text-slate-500 italic leading-relaxed">
-                    &ldquo;{need.volunteer_reply.slice(0, 120)}{need.volunteer_reply.length > 120 ? '…' : ''}&rdquo;
-                  </p>
-                )}
+
+            {/* Volunteer card */}
+            <Link
+              href={`/profile/${assignedVol.id}`}
+              className="group flex items-center gap-3 -mx-2 px-2 py-2.5 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              <Avatar name={assignedVol.name} size="md" />
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-semibold text-slate-900 truncate">{assignedVol.name}</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  <span className="capitalize">{assignedVol.ward}</span>
+                  <span className="mx-1.5 text-slate-300">·</span>
+                  <span className="font-mono">{assignedVol.phone}</span>
+                </p>
               </div>
+              <span className="text-[11px] font-medium text-slate-400 group-hover:text-slate-600 transition-colors">
+                View profile →
+              </span>
+            </Link>
+
+            {need.volunteer_reply && (
+              <p className="mt-3 text-sm text-slate-500 italic leading-relaxed pl-3 border-l-2 border-slate-200">
+                &ldquo;{need.volunteer_reply.slice(0, 140)}{need.volunteer_reply.length > 140 ? '…' : ''}&rdquo;
+              </p>
             )}
+
+            {/* Action grid */}
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              {onContactVolunteer && (
+                <button
+                  onClick={() => onContactVolunteer(assignedVol, `${need.need_type} need in ${need.location}`)}
+                  className="py-2.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                >
+                  💬 Send message
+                </button>
+              )}
+              {onReassign && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Release ${assignedVol.name} and reopen this alert?`)) {
+                      onReassign(need.id);
+                    }
+                  }}
+                  className="py-2.5 text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+                >
+                  ↺ Reassign
+                </button>
+              )}
+            </div>
+
             {onResolve && (
               <button
                 onClick={() => onResolve(need.id)}
-                className="w-full py-2.5 text-xs font-semibold tracking-wide text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors"
+                className="mt-2 w-full py-2.5 text-xs font-semibold tracking-wide text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors"
               >
                 Mark resolved
               </button>

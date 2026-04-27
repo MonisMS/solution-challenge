@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import type { CommunityNeed, Volunteer } from '@/lib/types';
 import Avatar from '@/components/ui/Avatar';
 import { getTopMatches, haversineKm, scoreVolunteer } from '@/lib/matching';
@@ -34,12 +35,17 @@ interface Props {
   onClose: () => void;
   onInitiateAssign: (need: CommunityNeed, volunteer: Volunteer) => void;
   onResolve: (needId: string) => void;
+  onReassign: (needId: string) => void;
+  onContactVolunteer: (volunteer: Volunteer, context?: string) => void;
   onViewDetails: () => void;
 }
 
 export default function NeedContextCard({
-  need, volunteers, onClose, onInitiateAssign, onResolve, onViewDetails,
+  need, volunteers, onClose, onInitiateAssign, onResolve, onReassign, onContactVolunteer, onViewDetails,
 }: Props) {
+  const assignedVol = need.assigned_volunteer_id
+    ? volunteers.find(v => v.id === need.assigned_volunteer_id)
+    : null;
   const [visible, setVisible] = useState(false);
   const [showVideo, setShowVideo] = useState(false);
 
@@ -130,14 +136,63 @@ export default function NeedContextCard({
               &ldquo;{need.raw_message}&rdquo;
             </p>
 
-            {/* Status banner */}
-            {need.status === 'assigned' && (
-              <div className="mt-4 flex items-center gap-2.5 px-3 py-2 rounded-lg bg-cyan-50/80 border border-cyan-100">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
-                <span className="text-xs font-semibold text-cyan-700">Volunteer en route</span>
-                {need.volunteer_eta && (
-                  <span className="text-xs text-cyan-600/80 ml-auto">{need.volunteer_eta}</span>
+            {/* Assigned volunteer — actionable card */}
+            {need.status === 'assigned' && assignedVol && (
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center gap-2 text-[10px] font-semibold text-cyan-700 uppercase tracking-[0.16em]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+                  Volunteer dispatched
+                  {need.volunteer_eta && (
+                    <span className="ml-auto normal-case tracking-normal text-cyan-700/80 font-medium">
+                      {need.volunteer_eta}
+                    </span>
+                  )}
+                </div>
+
+                <Link
+                  href={`/profile/${assignedVol.id}`}
+                  className="group flex items-center gap-3 -mx-1.5 px-1.5 py-2 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  <Avatar name={assignedVol.name} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{assignedVol.name}</p>
+                    <p className="text-[11px] text-slate-500 truncate">
+                      <span className="capitalize">{assignedVol.ward}</span>
+                      <span className="mx-1 text-slate-300">·</span>
+                      <span className="font-mono">{assignedVol.phone}</span>
+                    </p>
+                  </div>
+                  <svg className="text-slate-300 group-hover:text-slate-500 transition-colors shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                </Link>
+
+                {need.volunteer_reply && (
+                  <p className="text-xs text-slate-500 italic pl-3 border-l-2 border-slate-200 leading-relaxed">
+                    &ldquo;{need.volunteer_reply.slice(0, 100)}{need.volunteer_reply.length > 100 ? '…' : ''}&rdquo;
+                  </p>
                 )}
+
+                {/* Action grid */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => onContactVolunteer(assignedVol, `${need.need_type} need in ${need.location}`)}
+                    className="py-2 text-[11px] font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                  >
+                    💬 Message
+                  </button>
+                  <button
+                    onClick={() => onReassign(need.id)}
+                    className="py-2 text-[11px] font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+                  >
+                    ↺ Reassign
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => onResolve(need.id)}
+                  className="w-full py-2.5 text-xs font-semibold tracking-wide text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors"
+                >
+                  Mark resolved
+                </button>
               </div>
             )}
 
@@ -188,23 +243,13 @@ export default function NeedContextCard({
               </div>
             )}
 
-            {/* Action footer */}
-            <div className="mt-5 flex items-center gap-2">
-              {need.status === 'assigned' && (
-                <button
-                  onClick={() => onResolve(need.id)}
-                  className="flex-1 py-2.5 text-xs font-semibold tracking-wide text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors"
-                >
-                  Mark resolved
-                </button>
-              )}
-              <button
-                onClick={onViewDetails}
-                className="flex-1 py-2.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-              >
-                Open full report →
-              </button>
-            </div>
+            {/* Open full report link */}
+            <button
+              onClick={onViewDetails}
+              className="mt-5 w-full py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors border-t border-slate-100 pt-4"
+            >
+              Open full report →
+            </button>
           </div>
         </div>
       </div>

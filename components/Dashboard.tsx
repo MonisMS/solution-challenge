@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { collection, onSnapshot, doc, updateDoc, increment } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import type L from 'leaflet';
 import { db } from '@/lib/firebase';
 import type { CommunityNeed, Volunteer, AppNotification } from '@/lib/types';
@@ -17,6 +17,7 @@ import MapControls from './map/MapControls';
 import NotificationBell from './notifications/NotificationBell';
 import AlertToast from './notifications/AlertToast';
 import AssignConfirmDialog from './dialogs/AssignConfirmDialog';
+import ContactVolunteerDialog from './dialogs/ContactVolunteerDialog';
 import SituationBriefModal from './dialogs/SituationBriefModal';
 import VolunteerDrawer from './dialogs/VolunteerDrawer';
 import Toast from './Toast';
@@ -44,6 +45,7 @@ export default function Dashboard() {
   const [briefGeneratedAt, setBriefGeneratedAt] = useState<number | null>(null);
   const [detailNeed, setDetailNeed] = useState<CommunityNeed | null>(null);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+  const [contactTarget, setContactTarget] = useState<{ volunteer: Volunteer; context?: string } | null>(null);
 
   const prevNeedIds = useRef<Set<string>>(new Set());
   const dismissToast = useCallback(() => setToast(null), []);
@@ -119,10 +121,6 @@ export default function Dashboard() {
         }),
       ]);
       if (!patchRes.ok) throw new Error('Failed to update need');
-      await updateDoc(doc(db, 'volunteers', volunteer.id), {
-        available: false,
-        assignmentCount: increment(1),
-      });
       setToast({
         message: notifyRes.ok
           ? `Assigned to ${volunteer.name} — WhatsApp sent ✓`
@@ -134,21 +132,16 @@ export default function Dashboard() {
       setToast({ message: 'Assignment failed. Please try again.', type: 'error' });
     }
     setAssignTarget(null);
-    setSelectedNeed(null);
-    setDetailNeed(null);
   }, [assignTarget]);
 
   const handleResolve = useCallback(async (needId: string) => {
-    const need = needs.find(n => n.id === needId);
     try {
-      await fetch('/api/needs', {
+      const res = await fetch('/api/needs', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: needId, status: 'resolved' }),
       });
-      if (need?.assigned_volunteer_id) {
-        await updateDoc(doc(db, 'volunteers', need.assigned_volunteer_id), { available: true });
-      }
+      if (!res.ok) throw new Error();
       setToast({ message: 'Need marked as resolved ✓', type: 'success' });
     } catch (err) {
       console.error('Resolve error:', err);
@@ -156,7 +149,60 @@ export default function Dashboard() {
     }
     setSelectedNeed(null);
     setDetailNeed(null);
-  }, [needs]);
+  }, []);
+
+  const handleReassign = useCallback(async (needId: string) => {
+    const need = needs.find(n => n.id === needId);
+    const prevVol = need?.assigned_volunteer_id
+      ? volunteers.find(v => v.id === need.assigned_volunteer_id)
+      : null;
+    try {
+      const res = await fetch('/api/needs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: needId, status: 'open' }),
+      });
+      if (!res.ok) throw new Error();
+
+      // Best-effort notify the released volunteer
+      if (prevVol) {
+        fetch('/api/whatsapp/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: prevVol.phone,
+            message: `Update — your previous assignment has been reassigned. You're back on the available list. Thank you!`,
+          }),
+        }).catch(() => {});
+      }
+
+      setToast({ message: 'Volunteer released — pick another responder', type: 'success' });
+    } catch (err) {
+      console.error('Reassign error:', err);
+      setToast({ message: 'Failed to release volunteer.', type: 'error' });
+    }
+  }, [needs, volunteers]);
+
+  const handleSendCustomMessage = useCallback(async (message: string) => {
+    if (!contactTarget) return;
+    try {
+      const res = await fetch('/api/whatsapp/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: contactTarget.volunteer.phone, message }),
+      });
+      if (!res.ok) throw new Error();
+      setToast({ message: `Message sent to ${contactTarget.volunteer.name} ✓`, type: 'success' });
+    } catch (err) {
+      console.error('Contact error:', err);
+      setToast({ message: 'Failed to deliver message.', type: 'error' });
+    }
+    setContactTarget(null);
+  }, [contactTarget]);
+
+  const openContact = useCallback((volunteer: Volunteer, context?: string) => {
+    setContactTarget({ volunteer, context });
+  }, []);
 
   const handleFetchBrief = useCallback(async () => {
     setShowBrief(true);
@@ -254,6 +300,8 @@ export default function Dashboard() {
               onBack={() => setDetailNeed(null)}
               onInitiateAssign={handleInitiateAssign}
               onResolve={handleResolve}
+              onReassign={handleReassign}
+              onContactVolunteer={openContact}
             />
           )}
           {activePanel === 'volunteers' && (
@@ -333,6 +381,8 @@ export default function Dashboard() {
               onClose={() => { setSelectedNeed(null); setDetailNeed(null); }}
               onInitiateAssign={handleInitiateAssign}
               onResolve={handleResolve}
+              onReassign={handleReassign}
+              onContactVolunteer={openContact}
               onViewDetails={handleViewDetails}
             />
           </div>
@@ -353,6 +403,15 @@ export default function Dashboard() {
           volunteer={assignTarget.volunteer}
           onCancel={() => setAssignTarget(null)}
           onConfirm={handleConfirmAssign}
+        />
+      )}
+
+      {contactTarget && (
+        <ContactVolunteerDialog
+          volunteer={contactTarget.volunteer}
+          context={contactTarget.context}
+          onCancel={() => setContactTarget(null)}
+          onSend={handleSendCustomMessage}
         />
       )}
 
